@@ -84,22 +84,36 @@ nodeLogLike <- function(curr_part_res,
 
   # Calculating the nodeLogLikelihood for a stump
   if(length(D_subset_index)==0){
+
+    # Using my approach
     s_gamma <- n_leaf + (data$tau_gamma/data$tau)
     result <- 0.5*(n_leaf-1)*log(data$tau)-0.5*log(s_gamma)-data$tau*crossprod(curr_part_res_leaf)+0.5*data$tau*(1/s_gamma)*(sum(curr_part_res_leaf)^2)
 
+    # Using the Andrew's approach I would have
+    # mean_aux <- rep(0,length(curr_part_res_leaf))
+    # cov_aux <- diag(x = (data$tau^(-1)),nrow = n_leaf) + (data$tau_gamma^(-1))*matrix(1,nrow = n_leaf,ncol = n_leaf)
+    # result <- mvnfast::dmvn(X = curr_part_res_leaf,mu = mean_aux,sigma = cov_aux,log = TRUE)
   } else {
     # Getting the p_{tell} i.e: number of betas of the current terminal node
     d_basis <- length(D_subset_index)
     D_leaf <- data$D_train[index_node,D_subset_index, drop = FALSE]
-    s_gamma <- n_leaf + (data$tau_gamma/data$tau)
 
+
+    # # Using the standard approach I would have:
+    s_gamma <- n_leaf + (data$tau_gamma/data$tau)
     s_beta_aux_d <- crossprod(crossprod(ones,D_leaf))/s_gamma
     res_m <- matrix(curr_part_res_leaf,ncol = 1)
     s_beta <- crossprod(D_leaf)+diag(x = data$tau_beta/data$tau, nrow = d_basis) - s_beta_aux_d
-    Gamma_beta <- crossprod(D_leaf,res_m)-(s_gamma^(-1))*sum(curr_part_res_leaf)*colSums(D_leaf)
+    Gamma_beta <- crossprod(D_leaf,res_m)-(s_gamma^(-1))*crossprod(D_leaf,ones)%*%crossprod(ones,res_m)
 
     # Getting the result
-    result <- 0.5*(n_leaf-1-d_basis)*log(data$tau) -0.5*log(s_gamma)+0.5*determinant(chol2inv(chol(s_beta)),logarithm = TRUE)$modulus -0.5*data$tau*crossprod(res_m,(diag(x = (1-(n_leaf/s_gamma)),nrow = n_leaf)%*%res_m)) + 0.5*data$tau*crossprod(Gamma_beta,solve(s_beta,Gamma_beta))
+    result <- -0.5*(n_leaf-1-d_basis)*log(2*pi) + 0.5*(n_leaf-1-d_basis)*log(data$tau) + d_basis*log(data$tau_beta) -0.5*log(s_gamma)-0.5*determinant(chol2inv(chol(s_beta)),logarithm = TRUE)$modulus -0.5*data$tau*(crossprod(res_m)-(s_gamma^(-1))*crossprod(crossprod(ones,res_m))-crossprod(Gamma_beta,(solve(s_beta,Gamma_beta))))
+
+
+    # Using the Andrew's approach I would have
+    # mean_aux <- rep(0,length(curr_part_res_leaf))
+    # cov_aux <- diag(x = (data$tau^(-1)),nrow = n_leaf) + (data$tau_gamma^(-1))*matrix(1,nrow = n_leaf,ncol = n_leaf)  + (data$tau_beta^(-1))*tcrossprod(D_leaf)
+    # result <- mvnfast::dmvn(X = curr_part_res_leaf,mu = mean_aux,sigma = cov_aux,log = TRUE)
 
   }
 
@@ -187,12 +201,13 @@ grow <- function(tree,
 
   # For convinience we are going to avoid terminal nodes less than 2
   if( (length(left_index)<2) || (length(right_index) < 2)) {
+    print("AARARARARRA")
     stop("Error of invalid terminal node")
   }
   # Calculating loglikelihood for the grown node, the left and the right node
 
   g_loglike <- nodeLogLike(curr_part_res = curr_part_res,
-                           ancestors = g_node$ancestors,
+                           ancestors = unique(g_node$ancestors),
                            index_node = g_node$train_index,
                            data = data)
 
@@ -230,10 +245,10 @@ grow <- function(tree,
                       left = NA,
                       right = NA,
                       parent_node = g_node_name,
-                      ancestors = unique(c(g_node$ancestors,p_var)),
+                      ancestors = c(g_node$ancestors,p_var),
                       terminal = TRUE,
                       gamma = 0,
-                      betas_vec = g_node$betas_vec)
+                      betas_vec = rep(0,ncol(data$D_train)))
 
     # names(tree[[1]])
 
@@ -247,10 +262,10 @@ grow <- function(tree,
                       left = NA,
                       right = NA,
                       parent_node = g_node_name,
-                      ancestors = unique(c(g_node$ancestors,p_var)),
+                      ancestors = c(g_node$ancestors,p_var),
                       terminal = TRUE,
                       gamma = 0,
-                      betas_vec = g_node$betas_vec)
+                      betas_vec = rep(0,ncol(data$D_train)))
 
     # Modifying the current node
     tree[[g_node_name]]$left = paste0("node",max_index+1)
@@ -306,17 +321,18 @@ prune <- function(tree,
 
   p_loglike <- nodeLogLike(curr_part_res = curr_part_res,
                            index_node = p_node$train_index,
-                           data = data,ancestors = p_node$ancestors)
+                           data = data,
+                           ancestors = unique(p_node$ancestors))
 
 
   p_left_loglike <-  nodeLogLike(curr_part_res = curr_part_res,
                                index_node = children_left_index,
-                               ancestors = children_left_ancestors,
+                               ancestors = unique(children_left_ancestors),
                                data = data)
 
   p_right_loglike <-  nodeLogLike(curr_part_res = curr_part_res,
                                 index_node = children_right_index,
-                                ancestors = children_right_index,
+                                ancestors = unique(children_right_index),
                                 data = data)
 
   # Calculating the prior
@@ -359,9 +375,9 @@ change <- function(tree,
                  data){
 
   # Sampling a terminal node
-  noc_nodes <- get_nogs(tree)
-  n_noc_nodes <- length(noc_nodes)
-  c_node_name <- sample(noc_nodes,size = 1)
+  nog_nodes <- get_nogs(tree)
+  n_nog_nodes <- length(nog_nodes)
+  c_node_name <- sample(nog_nodes,size = 1)
   c_node <- tree[[c_node_name]]
 
 
@@ -432,27 +448,33 @@ change <- function(tree,
 
   c_loglike_left <- nodeLogLike(curr_part_res = curr_part_res,
                            index_node = tree[[c_node$left]]$train_index,
-                           ancestors = tree[[c_node$left]]$ancestors,
+                           ancestors = unique(tree[[c_node$left]]$ancestors),
                            data = data)
 
 
   c_loglike_right <-  nodeLogLike(curr_part_res = curr_part_res,
                                index_node = tree[[c_node$right]]$train_index,
-                               ancestors = tree[[c_node$right]]$ancestors,
+                               ancestors = unique(tree[[c_node$right]]$ancestors),
                                data = data)
 
   # Calculating a new ancestors left and right
-  new_left_ancestors <- c(tree[[c_node$left]]$ancestors[tree[[c_node$left]]$ancestors!=tree[[c_node$left]]$node_var],p_var)
-  new_right_ancestors <- c(tree[[c_node$right]]$ancestors[tree[[c_node$right]]$ancestors!=tree[[c_node$right]]$node_var],p_var)
+  old_p_var <- tree[[c_node$left]]$node_var
+
+  # Storing new left and right ancestors
+  new_left_ancestors <- tree[[c_node$left]]$ancestors
+  new_left_ancestors[length(new_left_ancestors)] <- p_var
+
+  new_right_ancestors <- tree[[c_node$right]]$ancestors
+  new_right_ancestors[length(new_right_ancestors)] <- p_var
 
   new_c_loglike_left <-  nodeLogLike(curr_part_res = curr_part_res,
                                 index_node = left_index,
-                                ancestors = new_left_ancestors,
+                                ancestors = unique(new_left_ancestors),
                                 data = data)
 
   new_c_loglike_right <-  nodeLogLike(curr_part_res = curr_part_res,
                                      index_node = right_index,
-                                     ancestors = new_right_ancestors,
+                                     ancestors = unique(new_right_ancestors),
                                      data = data)
 
 
@@ -503,15 +525,17 @@ updateGamma <- function(tree,
   for(i in 1:length(t_nodes_names)){
 
     cu_t <- tree[[t_nodes_names[i]]]
-    D_dim <- length(cu_t$betas_vec)
+    # Selecting the actually parameters subsetting
+    leaf_basis_subindex <- unlist(data$basis_subindex[unique(cu_t$ancestors)]) # Recall to the "unique function here
+
+    D_dim <- length(leaf_basis_subindex)
 
     # Updating the sum of the residuals
     r_sum = sum(curr_part_res[cu_t$train_index])
 
     s_gamma_inv <- 1/(length(cu_t$train_index)+data$tau_gamma/data$tau)
 
-    # Selecting the actually parameters subsetting
-    leaf_basis_subindex <- unlist(data$basis_subindex[cu_t$ancestors])
+
     leaf_beta <- cu_t$betas_vec[leaf_basis_subindex]
 
     if(length(leaf_basis_subindex)!=0){
@@ -542,7 +566,6 @@ updateBetas <- function(tree,
 
   # Getting the terminals
   t_nodes_names <- get_terminals(tree)
-  basis_dim <- ncol(data$D_train)
 
 
   for(i in 1:length(t_nodes_names)){
@@ -556,8 +579,12 @@ updateBetas <- function(tree,
       next
     }
 
+    # Creatinga  vector of zeros for betas_vec
+    tree[[t_nodes_names[[i]]]]$betas_vec <- rep(0,ncol(data$D_train))
+
     # Selecting the actually parameters subsetting
-    leaf_basis_subindex <- unlist(data$basis_subindex[cu_t$ancestors])
+    leaf_basis_subindex <- unlist(data$basis_subindex[unique(cu_t$ancestors)]) # Recall to the unique() here too
+    basis_dim <- length(leaf_basis_subindex)
 
     s_beta <- crossprod(data$D_train[cu_t$train_index,leaf_basis_subindex])+diag(x = data$tau_beta/data$tau, nrow = basis_dim)
     s_beta_inv <- chol2inv(chol(s_beta))
@@ -567,7 +594,7 @@ updateBetas <- function(tree,
     beta_mean <- s_beta_inv%*%(crossprod(data$D_train[cu_t$train_index,leaf_basis_subindex],(curr_part_res[cu_t$train_index]-cu_t$gamma)))
     # print(sum_aux)
     # Check this line again if there's any bug on the cholesky decomposition
-    tree[[t_nodes_names[i]]]$betas_vec <- c(mvnfast::rmvn(n = 1,mu = beta_mean,
+    tree[[t_nodes_names[i]]]$betas_vec[leaf_basis_subindex] <- c(mvnfast::rmvn(n = 1,mu = beta_mean,
                                                             sigma = s_beta_inv/data$tau,isChol = FALSE))
 
     # #If we want to use the cholesky decomposition, doesn;t seem any faster though
@@ -590,7 +617,7 @@ update_tau_betas <- function(forest,
 
 
   # Setting some default hyperparameters
-  a_tau_beta <- d_tau_beta <- 0.001
+  a_tau_beta <- d_tau_beta <- 1
   tau_b_shape <- 0.0
   tau_b_rate <- 0.0
 
@@ -605,9 +632,12 @@ update_tau_betas <- function(forest,
     # Iterating over the terminal nodes
     for(j in 1:length(t_nodes_names)){
 
-      if(!is.null(forest[[i]][[t_nodes_names[j]]]$betas_vec)){
-        tau_b_shape <- tau_b_shape + length(forest[[i]][[t_nodes_names[j]]]$betas_vec)
-        tau_b_rate <- tau_b_rate + c(crossprod(forest[[i]][[t_nodes_names[j]]]$betas_vec))
+      cu_t <- forest[[i]][[t_nodes_names[j]]]
+      leaf_basis_subindex <- unlist(data$basis_subindex[unique(cu_t$ancestors)]) # Recall to the unique() function here
+
+      if(!is.null(cu_t$betas_vec)){
+        tau_b_shape <- tau_b_shape + length(leaf_basis_subindex)
+        tau_b_rate <- tau_b_rate + c(crossprod(cu_t$betas_vec[leaf_basis_subindex]))
       }
 
     }
@@ -615,7 +645,7 @@ update_tau_betas <- function(forest,
 
     tau_beta_vec_aux <- rgamma(n = 1,
                                    shape = 0.5*tau_b_shape + a_tau_beta,
-                                   rate = 0.5*tau_b_rate +d_tau_beta)
+                                   rate = 0.5*tau_b_rate + d_tau_beta)
   }
 
   return(tau_beta_vec_aux)
@@ -631,7 +661,7 @@ update_tau_gamma <- function(forest,
 
 
   # Same default as the paper;
-  a_tau_gamma <- d_tau_gamma <- 0.001
+  a_tau_gamma <- d_tau_gamma <- 1
 
   tau_gamma_shape <- 0
   tau_gamma_rate <- 0
@@ -653,7 +683,7 @@ update_tau_gamma <- function(forest,
 
   }
 
-  tau_gamma_aux <- rgamma(n = 1,
+  tau_gamma_aux <- stats::rgamma(n = 1,
                                 shape = 0.5*tau_gamma_shape + a_tau_gamma,
                                 rate = 0.5*tau_gamma_rate + d_tau_gamma)
 
@@ -688,8 +718,8 @@ getPredictions <- function(tree,
                            data){
 
   # Creating the vector to hold the values of the prediction
-  y_hat <- matrix(0, nrow = nrow(data$x_train), ncol = length(data$basis_subindex)+1)
-  y_hat_test <- matrix(0,nrow(data$x_test), ncol = length(data$basis_subindex)+ 1 )
+  y_hat <- matrix(0, nrow = nrow(data$x_train), ncol = ncol(data$x_train)+1)
+  y_hat_test <- matrix(0,nrow(data$x_test), ncol = ncol(data$x_test)+ 1 )
 
   # Getting terminal nodes
   t_nodes <- get_terminals(tree = tree)
@@ -700,19 +730,24 @@ getPredictions <- function(tree,
     leaf_train_index <- tree[[t_nodes[i]]]$train_index
     leaf_test_index <- tree[[t_nodes[i]]]$test_index
     leaf_intercept <- tree[[t_nodes[i]]]$gamma
-    leaf_basis_subindex <- data$basis_subindex[tree[[t_nodes[[i]]]]$ancestors]
+    leaf_ancestors <- unique(tree[[t_nodes[[i]]]]$ancestors) # recall the unique() argument here
+    leaf_basis_subindex <- data$basis_subindex[leaf_ancestors]
 
+    # Test unit
+    if(length(leaf_ancestors)!=length(leaf_basis_subindex)){
+      stop("Error on the getPredictions function")
+    }
     # Only add the marginal effects if the variables are within that terminal node
     if(length(leaf_basis_subindex)!=0){
       for(k in 1:length(leaf_basis_subindex)){
 
-          y_hat[leaf_train_index,k] <- data$D_train[leaf_train_index,basis_subindex[[k]], drop = FALSE]%*%tree[[t_nodes[i]]]$betas_vec[basis_subindex[[k]]]
-          y_hat_test[leaf_test_index,k] <- data$D_test[leaf_test_index,basis_subindex[[k]], drop = FALSE]%*%tree[[t_nodes[i]]]$betas_vec[basis_subindex[[k]]]
+          y_hat[leaf_train_index,leaf_ancestors[k]] <- y_hat[leaf_train_index,leaf_ancestors[k]] + data$D_train[leaf_train_index,leaf_basis_subindex[[k]], drop = FALSE]%*%tree[[t_nodes[i]]]$betas_vec[leaf_basis_subindex[[k]]]
+          y_hat_test[leaf_test_index,leaf_ancestors[k]] <- y_hat_test[leaf_test_index,leaf_ancestors[k]] + data$D_test[leaf_test_index,leaf_basis_subindex[[k]], drop = FALSE]%*%tree[[t_nodes[i]]]$betas_vec[leaf_basis_subindex[[k]]]
 
       }
     }
-    y_hat[leaf_train_index,length(data$basis_subindex)+1] <- leaf_intercept
-    y_hat_test[leaf_test_index,length(data$basis_subindex)+1] <- leaf_intercept
+    y_hat[leaf_train_index,ncol(data$x_train)+1] <- y_hat[leaf_train_index,ncol(data$x_train)+1] +  leaf_intercept
+    y_hat_test[leaf_test_index,ncol(data$x_test)+1] <- y_hat_test[leaf_test_index,ncol(data$x_test)+1] + leaf_intercept
 
   }
 

@@ -137,6 +137,19 @@ rspBART <- function(x_train,
                                            derivs = 0*x_test_scale[,dummy_x$continuousVars[i], drop = FALSE],outer.ok = TRUE)$design
   }
 
+  if(motrbart_bool){
+    D_train <- x_train_scale
+    D_test <- x_test_scale
+
+    basis_size <- 1 # Change this value to the desired size of each sublist
+    D_seq <- 1:ncol(D_train)  # Replace this with the columns of D
+
+    # Creating a vector
+    basis_subindex <- split(D_seq, rep(1:(length(D_seq) %/% basis_size), each = basis_size, length.out = length(D_seq)))
+
+
+  }
+
   # R-th difference order matrix
   # if(dif_order!=0){
   #   D <- D_gen(p = ncol(D_train),n_dif = dif_order)
@@ -375,7 +388,7 @@ rspBART <- function(x_train,
 
     # Updating all other parameters
     data$tau_beta <- update_tau_betas(forest = forest,data = data)
-    # data$tau_gamma <- update_tau_gamma(forest = forest,data = data)
+    data$tau_gamma <- update_tau_gamma(forest = forest,data = data)
 
     # Updating delta
     # data$delta <- update_delta(data = data)
@@ -410,6 +423,9 @@ rspBART <- function(x_train,
   }
 
   # ====== Few analyses from the results ======
+  if(scale_bool){
+    all_tau_correc<- all_tau/((diff(range(y_train)))^2)
+  }
   plot(all_tau,type = "l")
   y1_hat <- matrix(0,nrow = n_post,ncol = nrow(data$x_train))
 
@@ -419,12 +435,16 @@ rspBART <- function(x_train,
     }
   }
 
-  plot(x_train_scale[,1],colMeans(y1_hat))
+  plot(x_train_scale[,1],colMeans(y1_hat[1801:3000,,drop = FALSE]))
+  plot(colMeans(y1_hat[1801:3000,,drop = FALSE]),y_train)
+  # plot(x_train[,1],10 * sin(pi * x_train[, 1])) # For x1
+  # plot(x_train[,2],20 * (x_train[, 2] - 0.5)^2) # For x1
+
   plot(all_tau_beta, type = "l")
   plot(all_tau_gamma,type = "l")
   plot(all_delta, type = "l")
   plot(x_train_scale,y_scale)
-  points(x_train_scale,colMeans(all_y_hat[1001:2000,]),pch= 20, col = "blue")
+  points(x_train_scale,colMeans(all_y_hat[1501:2000,]),pch= 20, col = "blue")
   # ============================================
 
   curr <- 0

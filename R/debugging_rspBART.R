@@ -47,16 +47,16 @@ y_train <- sim_train$y
 # x_train <- x_train[,1:5]
 # x_test <- x_test[,1:5]
 n_tree <- 10
-node_min_size = 1
-n_mcmc = 2000
-n_burn = 500
+node_min_size = 5
+n_mcmc = 3000
+n_burn = 0
 alpha = 0.95
 beta = 2
 df = 3
 sigquant = 0.9
 kappa = 2
 tau = 100
-scale_bool = TRUE
+scale_bool = FALSE
 stump = FALSE
 no_rotation_bool = FALSE
 numcut = 100L # Defining the grid of split rules
@@ -67,4 +67,4 @@ source("R/other_functions.R")
 # Splines parameters
 nIknots = 5
 dif_order = 0
-
+motrbart_bool <- FALSE
