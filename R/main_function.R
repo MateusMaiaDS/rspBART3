@@ -1,4 +1,7 @@
+# source("R/debugging_rspBART.R")
 rm(list=ls())
+source("R/other_functions.R")
+source("R/sim_functions.R")
 source("R/debugging_rspBART.R")
 source("R/tree_functions.R")
 set.seed(42)
@@ -7,6 +10,7 @@ set.seed(42)
 rspBART <- function(x_train,
                     y_train,
                     x_test,
+                    n_tree = 10,
                     node_min_size = 15,
                     n_mcmc = 2000,
                     n_burn = 500,
@@ -21,9 +25,9 @@ rspBART <- function(x_train,
                     tau = 100,
                     scale_bool = TRUE,
                     stump = FALSE,
-                    no_rotation_bool = FALSE,
                     numcut = 100L, # Defining the grid of split rules
-                    usequants = FALSE
+                    usequants = FALSE,
+                    motrbart_bool = FALSE
 ) {
 
   # Verifying if x_train and x_test are matrices
@@ -211,13 +215,14 @@ rspBART <- function(x_train,
   n_post <- (n_mcmc-n_burn)
   all_trees <- vector("list", n_mcmc)
   all_betas <- vector("list",n_mcmc)
-  tau_beta <- n_tree # In this first scenario we are going to work with a single value of \tau
+  tau_beta <- tau_mu # In this first scenario we are going to work with a single value of \tau
   all_tau_beta <- numeric(n_mcmc)
   all_tau_gamma <- numeric(n_mcmc)
-  all_delta <- numeric(n_mcmc)
+  # all_delta <- numeric(n_mcmc)
   all_tau <- numeric(n_mcmc)
 
   all_y_hat <- matrix(NA,nrow = n_mcmc,ncol = nrow(x_train_scale))
+  all_y_hat_test <- matrix(NA, nrow = n_mcmc, ncol = nrow(x_test_scale))
   all_trees_fit <- vector("list",n_mcmc)
   all_trees <- vector("list",n_mcmc)
   forest <- vector("list",n_tree)
@@ -257,8 +262,8 @@ rspBART <- function(x_train,
 
       all_cut_points[[j]]$left_train <-  which(x_train_scale[,i] < xcut_m[j,i])
       all_cut_points[[j]]$right_train <-  which(x_train_scale[,i] >= xcut_m[j,i])
-      all_cut_points[[j]]$left_test <-  which(x_train_scale[,i] < xcut_m[j,i])
-      all_cut_points[[j]]$right_test <-  which(x_train_scale[,i] >= xcut_m[j,i])
+      all_cut_points[[j]]$left_test <-  which(x_test_scale[,i] < xcut_m[j,i])
+      all_cut_points[[j]]$right_test <-  which(x_test_scale[,i] >= xcut_m[j,i])
 
     }
 
@@ -271,8 +276,11 @@ rspBART <- function(x_train,
   data <- list(x_train = x_train_scale,
                x_test = x_test_scale,
                y_train = y_scale,
+               xcut_m = xcut_m,
                D_train = D_train,
                D_test = D_test,
+               alpha = alpha,
+               beta = beta,
                basis_subindex = basis_subindex,
                all_var_splits = all_var_splits,
                n_tree = n_tree,
@@ -282,7 +290,7 @@ rspBART <- function(x_train,
                a_tau = a_tau,
                d_tau = d_tau,
                tau_beta = tau_beta,
-               delta = delta,
+               # delta = delta,
                # P = P,
                node_min_size = node_min_size)
 
@@ -300,7 +308,9 @@ rspBART <- function(x_train,
 
   # and tree predictions
   trees_fit <- matrix(0,nrow = n_tree,ncol = nrow(x_train_scale))
+  trees_fit_test <- matrix(0,nrow = n_tree, ncol  = nrow(x_test_scale))
 
+  # Initial prediction
   for(i in 1:n_tree){
     trees_fit[i,] <- y_scale/n_tree
   }
@@ -369,13 +379,15 @@ rspBART <- function(x_train,
                                          data = data)
 
       trees_fit[t,] <- rowSums(tree_predictions$y_train_hat)
-
+      trees_fit_test[t,] <- rowSums(tree_predictions$y_hat_test)
       partial_train_fits[[t]] <- tree_predictions$y_train_hat
 
 
     }
     # Getting final predcition
     y_hat <- colSums(trees_fit)
+    y_hat_test <- colSums(trees_fit_test)
+
 
     # Seeing the results for the unidimensional cases.
     plot(x_train_scale,y_scale)
@@ -388,7 +400,7 @@ rspBART <- function(x_train,
 
     # Updating all other parameters
     data$tau_beta <- update_tau_betas(forest = forest,data = data)
-    data$tau_gamma <- update_tau_gamma(forest = forest,data = data)
+    # data$tau_gamma <- update_tau_gamma(forest = forest,data = data)
 
     # Updating delta
     # data$delta <- update_delta(data = data)
@@ -405,8 +417,9 @@ rspBART <- function(x_train,
     all_tau_gamma[[i]] <- data$tau_gamma
     all_trees_fit[[i]] <- partial_train_fits
     all_y_hat[i,] <- y_hat
+    all_y_hat_test[i,] <- y_hat_test
     all_tau_beta[i] <- data$tau_beta
-    all_delta[i] <- data$delta
+    # all_delta[i] <- data$delta
 
 
     # Print progress bar
@@ -422,43 +435,80 @@ rspBART <- function(x_train,
 
   }
 
-  # ====== Few analyses from the results ======
+
+  # Normalising elements
+  all_tau_norm <- numeric(n_mcmc)
+  all_tau_gamma_norm <- numeric(n_mcmc)
+  all_tau_beta_norm <- numeric(n_mcmc)
+  all_trees_fit_norm <- vector("list",n_mcmc)
+  all_y_hat_norm <- matrix(NA,nrow = nrow(all_y_hat),ncol = ncol(all_y_hat))
+  all_y_hat_test_norm <- matrix(NA,nrow = nrow(all_y_hat_test),ncol = ncol(all_y_hat_test))
+
+  # Returning to the original scale
   if(scale_bool){
-    all_tau_correc<- all_tau/((diff(range(y_train)))^2)
+      for(post_iter in 1:n_mcmc){
+
+        all_tau_norm[post_iter] <- all_tau[post_iter]/(diff(range(y_train))^2)
+        all_tau_beta_norm[post_iter] <- all_tau_beta[post_iter]/(diff(range(y_train))^2)
+        all_tau_gamma_norm[post_iter] <- all_tau_gamma[post_iter]/(diff(range(y_train))^2)
+        for(tree_number in 1:n_tree){
+            all_trees_fit_norm[[post_iter]][[tree_number]] <- unnormalize_bart(z = all_trees_fit[[post_iter]][[tree_number]],a = min_y,b = max_y)
+        }
+        all_y_hat_norm[post_iter,] <- unnormalize_bart(z = all_y_hat[post_iter,],a = min_y,b = max_y)
+        all_y_hat_test_norm[post_iter, ] <- unnormalize_bart(z = all_y_hat_test[post_iter,],a = min_y,b = max_y)
+      }
+  } else {
+    all_tau_norm <- all_tau
+    all_tau_beta_norm <- all_tau_beta
+    all_tau_gamma_norm <- all_tau_gamma
+    all_trees_fit_norm <-all_trees_fit
+
+    all_y_hat_norm <- all_y_hat
+    all_y_hat_test_norm <- all_y_hat_test
   }
-  plot(all_tau,type = "l")
-  y1_hat <- matrix(0,nrow = n_post,ncol = nrow(data$x_train))
+  # plot(colMeans(all_y_hat_norm),y_train)
+  # sqrt(crossprod((colMeans(all_y_hat_norm)-y_train))/n_)
 
-  for(i in 1:nrow(y1_hat)){
-    for(t in 1:n_tree){
-      y1_hat[i,] <- all_trees_fit[[i]][[t]][,1]
-    }
-  }
+  # ====== Few analyses from the results ======
+  #           (Uncomment to run those)
+  # ===========================================
+  #
 
-  plot(x_train_scale[,1],colMeans(y1_hat[1801:3000,,drop = FALSE]))
-  plot(colMeans(y1_hat[1801:3000,,drop = FALSE]),y_train)
-  # plot(x_train[,1],10 * sin(pi * x_train[, 1])) # For x1
-  # plot(x_train[,2],20 * (x_train[, 2] - 0.5)^2) # For x1
-
-  plot(all_tau_beta, type = "l")
-  plot(all_tau_gamma,type = "l")
-  plot(all_delta, type = "l")
+  # plot(all_tau,type = "l")
+  # plot(all_tau,type = "l")
+  #
+  # y1_hat <- matrix(0,nrow = n_post,ncol = nrow(data$x_train))
+  #
+  # for(i in 1:nrow(y1_hat)){
+  #   for(t in 1:n_tree){
+  #     y1_hat[i,] <- all_trees_fit[[i]][[t]][,1]
+  #   }
+  # }
+  #
+  # plot(x_train_scale[,1],colMeans(y1_hat[1801:3000,,drop = FALSE]))
+  # plot(colMeans(y1_hat[1801:3000,,drop = FALSE]),y_train)
+  # # plot(x_train[,1],10 * sin(pi * x_train[, 1])) # For x1
+  # # plot(x_train[,2],20 * (x_train[, 2] - 0.5)^2) # For x1
+  #
+  # plot(all_tau_beta, type = "l")
+  # plot(all_tau_gamma,type = "l")
+  # plot(all_delta, type = "l")
   plot(x_train_scale,y_scale)
   points(x_train_scale,colMeans(all_y_hat[1501:2000,]),pch= 20, col = "blue")
-  # ============================================
-
-  curr <- 0
-  tree_lengths <- numeric()
-
-  for(i in 1:length(all_trees)){
-
-      curr <- curr + 1
-
-      for(j in 1:n_tree){
-          tree_lengths[curr] <- length(all_trees[[i]][[j]])
-      }
-
-  }
+  # # ============================================
+  #
+  # curr <- 0
+  # tree_lengths <- numeric()
+  #
+  # for(i in 1:length(all_trees)){
+  #
+  #     curr <- curr + 1
+  #
+  #     for(j in 1:n_tree){
+  #         tree_lengths[curr] <- length(all_trees[[i]][[j]])
+  #     }
+  #
+  # }
 
   # tree_lengths |> table()
   #
@@ -472,6 +522,25 @@ rspBART <- function(x_train,
   #     }
   # }
 
+
+  # Return the list with all objects and parameters
+  return(list(y_train_hat = all_y_hat_norm,
+              y_test_hat = all_y_hat_test_norm,
+              all_tau = all_tau_norm,
+              all_tau_beta = all_tau_beta_norm,
+              all_tau_gamma = all_tau_gamma_norm,
+              prior = list(n_tree = n_tree,
+                           alpha = alpha,
+                           beta = beta,
+                           tau_mu = tau_mu,
+                           a_tau = a_tau,
+                           d_tau = d_tau),
+              mcmc = list(n_mcmc = n_mcmc,
+                          n_burn = n_burn,
+                          all_trees = all_trees),
+              data = list(x_train = x_train,
+                          y_train = y_train,
+                          x_test = x_test)))
 
 }
 

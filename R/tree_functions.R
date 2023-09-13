@@ -86,13 +86,13 @@ nodeLogLike <- function(curr_part_res,
   if(length(D_subset_index)==0){
 
     # Using my approach
-    s_gamma <- n_leaf + (data$tau_gamma/data$tau)
-    result <- 0.5*(n_leaf-1)*log(data$tau)-0.5*log(s_gamma)-data$tau*crossprod(curr_part_res_leaf)+0.5*data$tau*(1/s_gamma)*(sum(curr_part_res_leaf)^2)
+    # s_gamma <- n_leaf + (data$tau_gamma/data$tau)
+    # result <- 0.5*(n_leaf-1)*log(data$tau)-0.5*log(s_gamma)-data$tau*crossprod(curr_part_res_leaf)+0.5*data$tau*(1/s_gamma)*(sum(curr_part_res_leaf)^2)
 
     # Using the Andrew's approach I would have
-    # mean_aux <- rep(0,length(curr_part_res_leaf))
-    # cov_aux <- diag(x = (data$tau^(-1)),nrow = n_leaf) + (data$tau_gamma^(-1))*matrix(1,nrow = n_leaf,ncol = n_leaf)
-    # result <- mvnfast::dmvn(X = curr_part_res_leaf,mu = mean_aux,sigma = cov_aux,log = TRUE)
+    mean_aux <- rep(0,length(curr_part_res_leaf))
+    cov_aux <- diag(x = (data$tau^(-1)),nrow = n_leaf) + (data$tau_gamma^(-1))*matrix(1,nrow = n_leaf,ncol = n_leaf)
+    result <- mvnfast::dmvn(X = curr_part_res_leaf,mu = mean_aux,sigma = cov_aux,log = TRUE)
   } else {
     # Getting the p_{tell} i.e: number of betas of the current terminal node
     d_basis <- length(D_subset_index)
@@ -100,20 +100,20 @@ nodeLogLike <- function(curr_part_res,
 
 
     # # Using the standard approach I would have:
-    s_gamma <- n_leaf + (data$tau_gamma/data$tau)
-    s_beta_aux_d <- crossprod(crossprod(ones,D_leaf))/s_gamma
-    res_m <- matrix(curr_part_res_leaf,ncol = 1)
-    s_beta <- crossprod(D_leaf)+diag(x = data$tau_beta/data$tau, nrow = d_basis) - s_beta_aux_d
-    Gamma_beta <- crossprod(D_leaf,res_m)-(s_gamma^(-1))*crossprod(D_leaf,ones)%*%crossprod(ones,res_m)
-
-    # Getting the result
-    result <- -0.5*(n_leaf-1-d_basis)*log(2*pi) + 0.5*(n_leaf-1-d_basis)*log(data$tau) + d_basis*log(data$tau_beta) -0.5*log(s_gamma)-0.5*determinant(chol2inv(chol(s_beta)),logarithm = TRUE)$modulus -0.5*data$tau*(crossprod(res_m)-(s_gamma^(-1))*crossprod(crossprod(ones,res_m))-crossprod(Gamma_beta,(solve(s_beta,Gamma_beta))))
+    # s_gamma <- n_leaf + (data$tau_gamma/data$tau)
+    # s_beta_aux_d <- crossprod(crossprod(ones,D_leaf))/s_gamma
+    # res_m <- matrix(curr_part_res_leaf,ncol = 1)
+    # s_beta <- crossprod(D_leaf)+diag(x = data$tau_beta/data$tau, nrow = d_basis) - s_beta_aux_d
+    # Gamma_beta <- crossprod(D_leaf,res_m)-(s_gamma^(-1))*crossprod(D_leaf,ones)%*%crossprod(ones,res_m)
+    #
+    # # Getting the result
+    # result <- -0.5*(n_leaf-1-d_basis)*log(2*pi) + 0.5*(n_leaf-1-d_basis)*log(data$tau) + d_basis*log(data$tau_beta) -0.5*log(s_gamma)-0.5*determinant(chol2inv(chol(s_beta)),logarithm = TRUE)$modulus -0.5*data$tau*(crossprod(res_m)-(s_gamma^(-1))*crossprod(crossprod(ones,res_m))-crossprod(Gamma_beta,(solve(s_beta,Gamma_beta))))
 
 
     # Using the Andrew's approach I would have
-    # mean_aux <- rep(0,length(curr_part_res_leaf))
-    # cov_aux <- diag(x = (data$tau^(-1)),nrow = n_leaf) + (data$tau_gamma^(-1))*matrix(1,nrow = n_leaf,ncol = n_leaf)  + (data$tau_beta^(-1))*tcrossprod(D_leaf)
-    # result <- mvnfast::dmvn(X = curr_part_res_leaf,mu = mean_aux,sigma = cov_aux,log = TRUE)
+    mean_aux <- rep(0,length(curr_part_res_leaf))
+    cov_aux <- diag(x = (data$tau^(-1)),nrow = n_leaf) + (data$tau_gamma^(-1))*matrix(1,nrow = n_leaf,ncol = n_leaf)  + (data$tau_beta^(-1))*tcrossprod(D_leaf)
+    result <- mvnfast::dmvn(X = curr_part_res_leaf,mu = mean_aux,sigma = cov_aux,log = TRUE)
 
   }
 
@@ -154,7 +154,7 @@ grow <- function(tree,
       }
 
       # Subsetting the indexes of
-      valid_cutpoint <- which(xcut_m[,p_var]>valid_range_grow[1] & xcut_m[,p_var]<valid_range_grow[2])
+      valid_cutpoint <- which(data$xcut_m[,p_var]>valid_range_grow[1] & data$xcut_m[,p_var]<valid_range_grow[2])
 
       # When there's no valid cutpoint on the sampled terminal node
       if(length(valid_cutpoint)==0){
@@ -166,11 +166,11 @@ grow <- function(tree,
              size = 1)
 
       # Getting the left & right index
-      left_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$left_train[all_var_splits[[p_var]][[sample_cutpoint]]$left_train %in% g_node$train_index]
-      right_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$right_train[all_var_splits[[p_var]][[sample_cutpoint]]$right_train %in% g_node$train_index]
+      left_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$left_train[data$all_var_splits[[p_var]][[sample_cutpoint]]$left_train %in% g_node$train_index]
+      right_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$right_train[data$all_var_splits[[p_var]][[sample_cutpoint]]$right_train %in% g_node$train_index]
 
-      left_test_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$left_test[all_var_splits[[p_var]][[sample_cutpoint]]$left_test %in% g_node$test_index]
-      right_test_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$right_test[all_var_splits[[p_var]][[sample_cutpoint]]$right_test %in% g_node$test_index]
+      left_test_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$left_test[data$all_var_splits[[p_var]][[sample_cutpoint]]$left_test %in% g_node$test_index]
+      right_test_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$right_test[data$all_var_splits[[p_var]][[sample_cutpoint]]$right_test %in% g_node$test_index]
 
 
 
@@ -223,9 +223,9 @@ grow <- function(tree,
                                data = data)
 
   # Calculating the prior
-  prior_loglike <- log(alpha*(1+g_node$depth_node)^(-beta)) + # Prior of the grown node becoming nonterminal
-                   2*log(1-alpha*(1+g_node$depth_node+1)^(-beta)) - # plus the prior of the two following nodes being terminal
-                   log(1-alpha*(1+g_node$depth_node)^(-beta)) # minus the probability of the grown node being terminal
+  prior_loglike <- log(data$alpha*(1+g_node$depth_node)^(-data$beta)) + # Prior of the grown node becoming nonterminal
+                   2*log(1-data$alpha*(1+g_node$depth_node+1)^(-data$beta)) - # plus the prior of the two following nodes being terminal
+                   log(1-data$alpha*(1+g_node$depth_node)^(-data$beta)) # minus the probability of the grown node being terminal
 
   # Transition prob
   log_trasition_prob  = log(0.3/(n_nog_nodes+1))-log(0.3/n_t_nodes)
@@ -336,9 +336,9 @@ prune <- function(tree,
                                 data = data)
 
   # Calculating the prior
-  prior_loglike <- log(1-alpha*(1+p_node$depth_node)^(-beta)) - # Prior of the new terminal node
-    log(alpha*(1+p_node$depth_node)^(-beta)) - # Prior of the grown node becoming nonterminal
-    2*log(1-alpha*(1+p_node$depth_node+1)^(-beta))  # plus the prior of the two following nodes being terminal
+  prior_loglike <- log(1-data$alpha*(1+p_node$depth_node)^(-data$beta)) - # Prior of the new terminal node
+    log(data$alpha*(1+p_node$depth_node)^(-data$beta)) - # Prior of the grown node becoming nonterminal
+    2*log(1-data$alpha*(1+p_node$depth_node+1)^(-data$beta))  # plus the prior of the two following nodes being terminal
     # minus the probability of the grown node being terminal
 
   # Transition prob
@@ -394,7 +394,7 @@ change <- function(tree,
     valid_range_grow <- range(data$x_train[c_node$train_index,p_var])
 
     # Subsetting the indexes of
-    valid_cutpoint <- which(xcut_m[,p_var]>valid_range_grow[1] & xcut_m[,p_var]<valid_range_grow[2])
+    valid_cutpoint <- which(data$xcut_m[,p_var]>valid_range_grow[1] & data$xcut_m[,p_var]<valid_range_grow[2])
 
     # When there's no valid cutpoint on the sampled terminal node
     if(length(valid_cutpoint)==0){
@@ -406,11 +406,11 @@ change <- function(tree,
                               size = 1)
 
     # Getting the left & right index
-    left_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$left_train[all_var_splits[[p_var]][[sample_cutpoint]]$left_train %in% c_node$train_index]
-    right_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$right_train[all_var_splits[[p_var]][[sample_cutpoint]]$right_train %in% c_node$train_index]
+    left_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$left_train[data$all_var_splits[[p_var]][[sample_cutpoint]]$left_train %in% c_node$train_index]
+    right_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$right_train[data$all_var_splits[[p_var]][[sample_cutpoint]]$right_train %in% c_node$train_index]
 
-    left_test_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$left_test[all_var_splits[[p_var]][[sample_cutpoint]]$left_test %in% c_node$test_index]
-    right_test_index  <- all_var_splits[[p_var]][[sample_cutpoint]]$right_test[all_var_splits[[p_var]][[sample_cutpoint]]$right_test %in% c_node$test_index]
+    left_test_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$left_test[data$all_var_splits[[p_var]][[sample_cutpoint]]$left_test %in% c_node$test_index]
+    right_test_index  <- data$all_var_splits[[p_var]][[sample_cutpoint]]$right_test[data$all_var_splits[[p_var]][[sample_cutpoint]]$right_test %in% c_node$test_index]
 
 
 
